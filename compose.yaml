@@ -1,0 +1,13 @@
+services:
+  web:
+    build: .
+    read_only: true
+    tmpfs: [/tmp]
+    volumes: [deploy_data:/app/.data]
+    ports: ["3000:3000"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 512m
+volumes:
+  deploy_data:
