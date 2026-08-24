@@ -35,7 +35,7 @@ export class Store {
   heartbeat(){return true}
   setRepoPath(id,_workerId,repoPath){this.db.prepare("UPDATE jobs SET repo_path=?,updated_at=? WHERE id=?").run(repoPath,new Date().toISOString(),id);return true}
   requestCancel(id,ownerId){const job=this.getJob(id,ownerId);if(!job)return null;if(["queued","running"].includes(job.status)){this.update(id,"cancelled");return this.getJob(id,ownerId)}return job}
-  createJob({ ownerId, repo, repoPath }) {
+  createJob({ ownerId, repo, repoPath = "" }) {
     const id = randomUUID(); const now = new Date().toISOString();
     this.db.prepare("INSERT INTO jobs VALUES (?, ?, ?, ?, 'queued', NULL, NULL, ?, ?)").run(id, ownerId, repo, repoPath, now, now);
     this.event(id, "job.created", { repo });
