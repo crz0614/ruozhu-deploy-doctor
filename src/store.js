@@ -26,7 +26,16 @@ export class Store {
       );
     `);
   }
-  createJob({ ownerId, repo, repoPath }) {
+  claimNext(workerId, leaseSeconds = 120) {
+    const row=this.db.prepare("SELECT id FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 1").get(); if(!row)return null;
+    this.db.prepare("UPDATE jobs SET status='running',updated_at=? WHERE id=? AND status='queued'").run(new Date().toISOString(),row.id);
+    const claimed=this.db.prepare("SELECT * FROM jobs WHERE id=?").get(row.id); this.event(row.id,"job.claimed",{workerId,leaseSeconds});
+    return { ...this.getJob(claimed.id,claimed.owner_id), ownerId:claimed.owner_id, workerId };
+  }
+  heartbeat(){return true}
+  setRepoPath(id,_workerId,repoPath){this.db.prepare("UPDATE jobs SET repo_path=?,updated_at=? WHERE id=?").run(repoPath,new Date().toISOString(),id);return true}
+  requestCancel(id,ownerId){const job=this.getJob(id,ownerId);if(!job)return null;if(["queued","running"].includes(job.status)){this.update(id,"cancelled");return this.getJob(id,ownerId)}return job}
+  createJob({ ownerId, repo, repoPath = "" }) {
     const id = randomUUID(); const now = new Date().toISOString();
     this.db.prepare("INSERT INTO jobs VALUES (?, ?, ?, ?, 'queued', NULL, NULL, ?, ?)").run(id, ownerId, repo, repoPath, now, now);
     this.event(id, "job.created", { repo });
@@ -35,7 +44,7 @@ export class Store {
   getJob(id, ownerId) {
     const row = this.db.prepare("SELECT * FROM jobs WHERE id=? AND owner_id=?").get(id, ownerId);
     if (!row) return null;
-    return { id: row.id, repo: row.repo, repoPath: row.repo_path, status: row.status, framework: row.framework, result: row.result_json ? JSON.parse(row.result_json) : null, createdAt: row.created_at, updatedAt: row.updated_at };
+    return { id: row.id, ownerId:row.owner_id, repo: row.repo, repoPath: row.repo_path, status: row.status, framework: row.framework, result: row.result_json ? JSON.parse(row.result_json) : null, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   listJobs(ownerId) { return this.db.prepare("SELECT id FROM jobs WHERE owner_id=? ORDER BY created_at DESC").all(ownerId).map(({ id }) => this.getJob(id, ownerId)); }
   update(id, status, patch = {}) {
