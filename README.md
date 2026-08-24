@@ -4,7 +4,7 @@ Deploy Doctor reproduces repository failures in a constrained runner, records ap
 
 Production control plane: https://ruozhu-deploy-doctor.lambdfefoazis.chatgpt.site
 
-The deployed control plane provides ChatGPT authentication and account-isolated D1 persistence for creating and cancelling diagnosis requests. Jobs remain visibly `waiting_for_runner` until the separate Docker isolation worker is deployed and connected; the site does not claim that queued work has executed.
+The repository now includes a deployable PostgreSQL-backed control plane and a separate durable worker. The hosted URL may lag the repository release; use `/api/health` and the event stream to verify whether a specific deployment has an active worker before relying on it.
 
 ## Current vertical slice
 
@@ -12,6 +12,7 @@ The deployed control plane provides ChatGPT authentication and account-isolated 
 - Includes a standalone Go 1.23 log normalizer/diagnoser with race-tested CI and JSON CLI output.
 - Runs only allow-listed diagnostic commands without a shell.
 - Persists jobs, accounts, sessions, fixes, and append-only events in PostgreSQL; SQLite WAL remains the zero-configuration local test mode.
+- Atomically claims queued jobs with PostgreSQL `FOR UPDATE SKIP LOCKED`, leases crashed work for recovery, and keeps the Docker socket out of the web container.
 - Records real logs, exit codes, failed steps, cancellation, and timeouts.
 - Redacts common tokens, credentials, authorization headers, and database passwords before persistence.
 - Exposes environment-variable names and configured/missing state, never values.
@@ -30,11 +31,13 @@ npm test
 npm start
 ```
 
-Open `http://localhost:3000`, enter a repository label and the absolute path of a local checkout, then run the diagnosis.
+For the useful multi-process stack, set a non-default `POSTGRES_PASSWORD` and run `docker compose up --build`. Open `http://localhost:3000`, register an account, and submit a public GitHub `owner/repo`. The web process persists the request; the worker clones it and records every step in the event stream.
 
 ## Security boundaries
 
-The runner clones only validated GitHub `owner/repo` identifiers into server-owned temporary directories. Production refuses to execute without Docker isolation; the sandbox disables network, uses a read-only root and repository mount, drops capabilities, and limits CPU, memory, PIDs and time. GitHub OAuth and an external job queue remain required before public production use.
+The runner clones only validated GitHub `owner/repo` identifiers into a disposable workspace volume. Production refuses to execute without Docker isolation; the sandbox disables network, uses a read-only container root, drops capabilities, and limits CPU, memory, PIDs and time. The repository workspace is writable because real tests and builds create artifacts, but it is disposable and never mounted into the web process. Mounting the Docker socket gives the worker host-level authority: deploy it only on a dedicated runner host, never beside unrelated workloads. Per-user GitHub OAuth is still required before public multi-tenant use; the current token integration is appropriate only for a single trusted operator.
+
+For lockfile-based Node.js repositories, dependency installation runs once with `npm ci --ignore-scripts` and outbound network access, then all project-owned test/lint/build scripts run with networking disabled. This prevents lifecycle scripts during installation but does not make untrusted dependencies risk-free; the dedicated runner boundary remains mandatory.
 
 ## API
 

@@ -1,13 +1,47 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: deploy_doctor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+      POSTGRES_DB: deploy_doctor
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U deploy_doctor]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   web:
     build: .
     read_only: true
     tmpfs: [/tmp]
-    volumes: [deploy_data:/app/.data]
+    environment:
+      DATABASE_URL: postgres://deploy_doctor:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/deploy_doctor
     ports: ["3000:3000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 512m
+  worker:
+    build: .
+    command: [node, src/worker.js]
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      DATABASE_URL: postgres://deploy_doctor:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/deploy_doctor
+      WORKSPACE_ROOT: /workspaces
+      WORKSPACE_VOLUME: ${COMPOSE_PROJECT_NAME:-ruozhu-deploy-doctor}_workspaces
+    volumes:
+      - workspaces:/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres: {condition: service_healthy}
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     pids_limit: 128
     mem_limit: 512m
 volumes:
-  deploy_data:
+  postgres_data:
+  workspaces:
