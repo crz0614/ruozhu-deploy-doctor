@@ -21,6 +21,7 @@ The repository now includes a deployable PostgreSQL-backed control plane and a s
 - Enforces owner-scoped job reads.
 - Stores proposed fixes separately and requires an explicit approval API call before publishing a non-`main` review branch and draft PR.
 - Applies every proposed unified diff to an isolated checkout copy and reruns detected checks before it can enter the approval queue.
+- Exposes Prometheus-compatible aggregate queue, worker-lease, and audit-event metrics without repository, user, or credential labels.
 
 ## Run
 
@@ -50,6 +51,7 @@ For lockfile-based Node.js repositories, dependency installation runs once with 
 - `POST /api/jobs/:id` with `action=propose-fix` — persist a reviewable patch.
 - `POST /api/fixes/:id/approve` — after explicit approval, create a review branch and draft PR.
 - `GET /api/health` — service and integration status.
+- `GET /metrics` — Prometheus-compatible aggregate runtime metrics; intentionally public and free of customer-identifying labels.
 - `GET /api/repositories` — list repositories visible to the configured GitHub authorization.
 
 No sample customers, revenue, success rates, or fabricated production claims are included.
