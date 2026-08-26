@@ -32,6 +32,16 @@ export class PostgresStore {
   async requestCancel(id,ownerId){const{rows}=await this.query("UPDATE jobs SET status='cancelled',lease_expires_at=NULL,updated_at=now() WHERE id=$1 AND owner_id=$2 AND status IN ('queued','running') RETURNING *",[id,ownerId]);if(rows[0])await this.event(id,"job.cancelled",{});return rows[0]?this.mapJob(rows[0]):this.getJob(id,ownerId)}
   async getJob(id,ownerId) { const {rows}=await this.query("SELECT * FROM jobs WHERE id=$1 AND owner_id=$2",[id,ownerId]); return rows[0]?this.mapJob(rows[0]):null; }
   async listJobs(ownerId) { const {rows}=await this.query("SELECT * FROM jobs WHERE owner_id=$1 ORDER BY created_at DESC",[ownerId]); return rows.map(r=>this.mapJob(r)); }
+  async metrics() { const {rows}=await this.query(`SELECT
+    count(*) FILTER (WHERE status='queued')::int AS queued,
+    count(*) FILTER (WHERE status='running')::int AS running,
+    count(*) FILTER (WHERE status='completed')::int AS completed,
+    count(*) FILTER (WHERE status='failed')::int AS failed,
+    count(*) FILTER (WHERE status='cancelled')::int AS cancelled,
+    count(DISTINCT worker_id) FILTER (WHERE status='running' AND lease_expires_at>=now())::int AS active_workers,
+    count(*) FILTER (WHERE status='running' AND lease_expires_at<now())::int AS expired_leases,
+    (SELECT count(*)::int FROM events) AS events
+    FROM jobs`); const r=rows[0]||{}; return {jobs:{queued:r.queued||0,running:r.running||0,completed:r.completed||0,failed:r.failed||0,cancelled:r.cancelled||0},activeWorkers:r.active_workers||0,expiredLeases:r.expired_leases||0,events:r.events||0}; }
   async update(id,status,patch={}) { await this.query("UPDATE jobs SET status=$1,framework=COALESCE($2,framework),result_json=COALESCE($3,result_json),updated_at=now() WHERE id=$4",[status,patch.framework??null,patch.result??null,id]); await this.event(id,`job.${status}`,patch); }
   async event(jobId,type,payload) { await this.query("INSERT INTO events(job_id,type,payload_json) VALUES($1,$2,$3)",[jobId,type,redactValue(payload)]); }
   async events(jobId,ownerId) { if(!await this.getJob(jobId,ownerId))return null; const {rows}=await this.query("SELECT seq,type,payload_json,created_at FROM events WHERE job_id=$1 ORDER BY seq",[jobId]); return rows.map(r=>({seq:Number(r.seq),type:r.type,payload:r.payload_json,createdAt:r.created_at})); }

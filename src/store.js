@@ -47,6 +47,10 @@ export class Store {
     return { id: row.id, ownerId:row.owner_id, repo: row.repo, repoPath: row.repo_path, status: row.status, framework: row.framework, result: row.result_json ? JSON.parse(row.result_json) : null, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   listJobs(ownerId) { return this.db.prepare("SELECT id FROM jobs WHERE owner_id=? ORDER BY created_at DESC").all(ownerId).map(({ id }) => this.getJob(id, ownerId)); }
+  metrics() {
+    const jobs=Object.fromEntries(["queued","running","completed","failed","cancelled"].map((status)=>[status,Number(this.db.prepare("SELECT count(*) AS count FROM jobs WHERE status=?").get(status).count)]));
+    return {jobs,activeWorkers:jobs.running,expiredLeases:0,events:Number(this.db.prepare("SELECT count(*) AS count FROM events").get().count)};
+  }
   update(id, status, patch = {}) {
     this.db.prepare("UPDATE jobs SET status=?, framework=COALESCE(?,framework), result_json=COALESCE(?,result_json), updated_at=? WHERE id=?")
       .run(status, patch.framework ?? null, patch.result ? JSON.stringify(patch.result) : null, new Date().toISOString(), id);
